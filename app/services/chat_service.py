@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
 
+from app.core.exceptions import ChatNotFoundException
 from app.repositories.chat_repository import ChatRepository
-from app.schemas.chat import ChatRequestSchema
+from app.schemas.chat import (
+    ChatDetailResponse,
+    ChatHistoryItemResponse,
+    ChatRequestSchema,
+)
 from app.services.llm_service import LLMService
 
 
@@ -28,6 +33,34 @@ class ChatService:
             user_id,
             body
         )
+
+    async def get_chat_history(
+        self,
+        user_id: str,
+    ):
+        sessions = await self.chat_repository.get_user_session_list(
+            user_id
+        )
+
+        return [
+            ChatHistoryItemResponse.from_mongo(session)
+            for session in sessions
+        ]
+
+    async def get_chat_by_id(
+        self,
+        user_id: str,
+        chat_session_id: str,
+    ) -> ChatDetailResponse:
+        session = await self.chat_repository.find_by_id_and_user(
+            chat_session_id,
+            user_id,
+        )
+
+        if session is None:
+            raise ChatNotFoundException()
+
+        return ChatDetailResponse.from_mongo(session)
 
     async def _create_new_chat(
         self,
@@ -93,9 +126,10 @@ class ChatService:
         )
 
         if session is None:
-            raise Exception("Chat session not found.")
+            raise ChatNotFoundException()
 
         messages = session["recent_messages"]
+        previous_messages = list[any](messages)
 
         now = datetime.now(timezone.utc)
 
@@ -109,7 +143,8 @@ class ChatService:
 
         ai_response = await self.llm_service.generate_response(
             body.message,
-            session["recent_messages"]
+            previous_messages=previous_messages,
+            chat_summary=session.get("chat_summary"),
         )
 
         messages.append(

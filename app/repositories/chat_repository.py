@@ -36,6 +36,17 @@ class ChatRepository:
         )
         return await cursor.to_list(length=None)
 
+    async def get_user_session_list(
+        self,
+        user_id: str,
+    ):
+        cursor = self.collection.find(
+            {"user_id": user_id},
+            {"_id": 1, "chat_session_name": 1},
+        ).sort("updated_at", -1)
+
+        return await cursor.to_list(length=None)
+
     async def update_session(
         self,
         chat_session_id: str,

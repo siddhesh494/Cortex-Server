@@ -17,3 +17,10 @@ class UnauthorizedException(Exception):
     def __init__(self):
 
         self.message = "Unauthorized."
+
+
+class ChatNotFoundException(Exception):
+
+    def __init__(self):
+
+        self.message = "Chat session not found."

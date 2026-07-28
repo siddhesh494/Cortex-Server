@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from app.core.response import ApiResponse
 
 from app.core.exceptions import (
+    ChatNotFoundException,
     InvalidCredentialsException,
     UnauthorizedException,
     UserAlreadyExistsException,
@@ -42,4 +43,15 @@ def register_exception_handlers(app: FastAPI):
         return ApiResponse.error(
             message=exc.message,
             status_code=401
+        )
+
+    @app.exception_handler(ChatNotFoundException)
+    async def chat_not_found_handler(
+        request: Request,
+        exc: ChatNotFoundException,
+    ):
+
+        return ApiResponse.error(
+            message=exc.message,
+            status_code=404
         )

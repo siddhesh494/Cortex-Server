@@ -32,18 +32,66 @@ class LLMService:
         previous_messages: list | None = None,
         chat_summary: dict | None = None,
     ) -> str:
-        """
-        Generate AI response.
+        user_context = self._format_chat_summary(chat_summary)
+        chat_history = self._build_chat_history(previous_messages)
 
-        TODO:
-        Replace this with Gemini/OpenAI.
-        """
         messages = [
             SystemMessage(content=PROMPT_FOR_CHAT_RESPONSE),
-            HumanMessage(content=userMessage)
+            *(
+                [SystemMessage(content=user_context)]
+                if user_context
+                else []
+            ),
+            *chat_history,
+            HumanMessage(content=userMessage),
         ]
+
         response = self.llmAPI.invoke(messages)
         return response.content
+
+    @staticmethod
+    def _build_chat_history(
+        previous_messages: list | None,
+    ) -> list:
+        if not previous_messages:
+            return []
+
+        chat_history = []
+
+        for message in previous_messages:
+            role = message.get("role")
+            content = message.get("message", "")
+
+            if role == "user":
+                chat_history.append(HumanMessage(content=content))
+            elif role == "assistant":
+                chat_history.append(AIMessage(content=content))
+
+        return chat_history
+
+    @staticmethod
+    def _format_chat_summary(chat_summary: dict | None) -> str | None:
+        if not chat_summary:
+            return None
+
+        summary = str(chat_summary.get("summary", "")).strip()
+        key_points = chat_summary.get("key_points") or []
+
+        if not summary and not key_points:
+            return None
+
+        parts = [
+            "Use this summary of earlier conversation for context:",
+        ]
+
+        if summary:
+            parts.append(summary)
+
+        if key_points:
+            parts.append("Key points:")
+            parts.extend(f"- {point}" for point in key_points)
+
+        return "\n".join(parts)
 
 
     async def generate_summary(
