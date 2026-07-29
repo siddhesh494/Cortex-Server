@@ -1,7 +1,11 @@
+import json
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 
 from app.dependencies.auth import get_current_user
 from app.core.response import ApiResponse
+from app.core.exceptions import ChatNotFoundException
 from app.schemas.chat import ChatRequestSchema
 from app.services.chat_service import ChatService
 
@@ -71,4 +75,32 @@ async def chat(
     return ApiResponse.success(
         data=data,
         message="Success"
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    body: ChatRequestSchema,
+    current_user=Depends(get_current_user),
+):
+    async def event_generator():
+        try:
+            async for event in chat_service.chat_stream(
+                user_id=str(current_user["_id"]),
+                body=body,
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        except ChatNotFoundException:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Chat not found'})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

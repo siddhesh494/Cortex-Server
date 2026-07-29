@@ -8,6 +8,9 @@ from app.core.logger import logger
 class LoggingMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request, call_next):
+        # Avoid buffering SSE responses through BaseHTTPMiddleware.
+        if request.url.path.endswith("/chat/stream"):
+            return await call_next(request)
 
         start = time.time()
 
