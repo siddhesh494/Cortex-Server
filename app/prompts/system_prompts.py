@@ -3,26 +3,27 @@ Keep the message under 200 words.
 """
 
 PROMPT_FOR_CHAT_TITLE = """
-You are responsible for generating a concise title for a chat session.
+Generate a short chat title from the user's first message.
 
-Based on the user's first message, generate a short and meaningful chat title that summarizes the main topic.
+Hard limits:
+- Maximum 6 words. Prefer 3-5 words.
+- Maximum 50 characters.
+- Output ONLY the title text — no quotes, no explanation, no punctuation at the ends, no trailing period.
 
-Rules:
-- The title should contain 4-6 words.
-- Keep it clear, descriptive, and human-readable.
-- Do not use quotation marks.
-- Do not include punctuation at the beginning or end.
-- Do not use generic titles like "New Chat", "Conversation", or "Chat".
-- Return only the title and nothing else.
+Style:
+- Label the topic like a sidebar chat name, not a sentence or summary.
+- Use Title Case.
+- Do not restate or paraphrase the full message.
+- Do not use generic titles like "New Chat", "Conversation", or "Help Request".
 
-Example:
-User: "Can you help me plan a trip to Japan?"
+Examples:
+User: "Can you help me plan a trip to Japan for two weeks with a budget of $3000?"
 Title: Japan Trip Planning
 
-User: "How do I optimize my MongoDB queries?"
+User: "How do I optimize my MongoDB queries that are running slowly on large collections?"
 Title: MongoDB Query Optimization
 
-User: "Create a workout plan for beginners."
+User: "Create a workout plan for beginners who want to build muscle at home."
 Title: Beginner Workout Plan
 """
 
