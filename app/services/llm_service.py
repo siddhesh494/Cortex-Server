@@ -6,9 +6,12 @@ from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 from app.config import settings
 from app.prompts.system_prompts import (
     PROMPT_FOR_CHAT_TITLE,
+    PROMPT_FOR_CHAT_TITLE_RETRY,
     PROMPT_FOR_CHAT_RESPONSE,
     PROMPT_FOR_CHAT_SUMMARY,
 )
+
+MAX_TITLE_WORDS = 5
 
 
 class LLMService:
@@ -26,10 +29,23 @@ class LLMService:
     ) -> str:
         messages = [
             SystemMessage(content=PROMPT_FOR_CHAT_TITLE),
-            HumanMessage(content=first_message)
+            HumanMessage(content=first_message),
         ]
-        response = self.llmAPI.invoke(messages)
-        return response.content
+        title = self.llmAPI.invoke(messages).content.strip()
+
+        if self._word_count(title) <= MAX_TITLE_WORDS:
+            return title
+
+        # LLM ignored the length limit — ask once more with a stricter reminder
+        messages.extend([
+            AIMessage(content=title),
+            HumanMessage(content=PROMPT_FOR_CHAT_TITLE_RETRY),
+        ])
+        return self.llmAPI.invoke(messages).content.strip()
+
+    @staticmethod
+    def _word_count(text: str) -> int:
+        return len(text.split())
 
     async def generate_response(
         self,
