@@ -6,7 +6,7 @@ PROMPT_FOR_CHAT_TITLE = """
 Generate a short chat title from the user's first message.
 
 Hard limits:
-- Maximum 6 words. Prefer 3-5 words.
+- Exactly 3-5 words. Never more than 5 words.
 - Maximum 50 characters.
 - Output ONLY the title text — no quotes, no explanation, no punctuation at the ends, no trailing period.
 
@@ -25,6 +25,13 @@ Title: MongoDB Query Optimization
 
 User: "Create a workout plan for beginners who want to build muscle at home."
 Title: Beginner Workout Plan
+"""
+
+PROMPT_FOR_CHAT_TITLE_RETRY = """
+Your previous title was too long.
+
+Rewrite it in 3-5 words only. Never exceed 5 words.
+Output ONLY the title text — no quotes, no explanation.
 """
 
 PROMPT_FOR_CHAT_RESPONSE = """
