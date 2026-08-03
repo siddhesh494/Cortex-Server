@@ -21,7 +21,14 @@ class Settings(BaseSettings):
         extra="ignore"
     )
     GROQ_API_KEY: str
-    MODEL_NAME: str
+    # Fallback / legacy single-model setting
+    MODEL_NAME: str = "llama-3.1-8b-instant"
+
+    # Per-agent models (override via .env to A/B test without code changes)
+    TITLE_MODEL: str = "llama-3.1-8b-instant"
+    DECISION_MODEL: str = "llama-3.1-8b-instant"
+    SUMMARY_MODEL: str = "llama-3.3-70b-versatile"
+    RESPONSE_MODEL: str = "llama-3.3-70b-versatile"
 
 
 settings = Settings()
