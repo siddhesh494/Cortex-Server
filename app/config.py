@@ -21,6 +21,8 @@ class Settings(BaseSettings):
         extra="ignore"
     )
     GROQ_API_KEY: str
+    TAVILY_API_KEY: str
+
     # Fallback / legacy single-model setting
     MODEL_NAME: str = "llama-3.1-8b-instant"
 
