@@ -440,7 +440,7 @@ class ChatService:
                 data=None,
                 error=str(exc),
             )
-
+        
         return self._format_tool_context(decision, result)
 
     @staticmethod
