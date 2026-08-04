@@ -6,7 +6,7 @@ PROMPT_FOR_CHAT_TITLE = """
 Generate a short chat title from the user's first message.
 
 Hard limits:
-- Maximum 6 words. Prefer 3-5 words.
+- Exactly 3-5 words. Never more than 5 words.
 - Maximum 50 characters.
 - Output ONLY the title text — no quotes, no explanation, no punctuation at the ends, no trailing period.
 
@@ -27,6 +27,13 @@ User: "Create a workout plan for beginners who want to build muscle at home."
 Title: Beginner Workout Plan
 """
 
+PROMPT_FOR_CHAT_TITLE_RETRY = """
+Your previous title was too long.
+
+Rewrite it in 3-5 words only. Never exceed 5 words.
+Output ONLY the title text — no quotes, no explanation.
+"""
+
 PROMPT_FOR_CHAT_RESPONSE = """
 You are a helpful, knowledgeable, and professional AI assistant.
 
@@ -45,9 +52,34 @@ Guidelines:
   - Explain important parts of the code briefly.
 - If you don't know the answer, say so instead of making up information.
 - Never fabricate facts, APIs, or references.
+- If tool results are provided, ground your answer in them. If results are empty, say so and answer from general knowledge without inventing citations or sources.
 - Maintain a friendly and professional tone.
 - Respond in Markdown format.
 - Return only the response intended for the user.
+"""
+
+PROMPT_FOR_TOOL_DECISION = """
+You are a tool-routing agent. Decide whether the user's latest message requires a tool.
+
+You will receive:
+1. A catalog of available tools (name, description, parameters)
+2. Optional conversation context
+3. The latest user message
+
+Rules:
+- Only choose a tool from the provided catalog.
+- Use a tool when the user needs external/current information (e.g. search the web, look up facts/news).
+- Do NOT use a tool for greetings, opinions, coding help, explanations, brainstorming, or anything answerable from general knowledge alone.
+- If a tool is needed, fill tool_args using only the parameters defined for that tool.
+- If no tool is needed, set needs_tool to false and tool_name to null.
+- Prefer not using a tool when unsure.
+- Return ONLY valid JSON with this exact shape and nothing else:
+{
+  "needs_tool": false,
+  "tool_name": null,
+  "tool_args": {},
+  "reason": "short explanation"
+}
 """
 
 PROMPT_FOR_CHAT_SUMMARY = """
