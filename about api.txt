@@ -1,47 +1,20 @@
-What it will have
-- Memmory feature (will store the session in mongo)
-- Tool use (google search)
-
-Mongo collection
-user
-    - id
-    - name
-    - email
-
-chatSession    
-    - id
-    - user_id
-    - chat_session_name
-    - chat_summary: {
-        summary: "",
-        key_point: {},
-        ....
-    }
-    - recent_messages:[]
-    - 
-
-
-API endpoint - /chat
-
-Senario
-1) when click on the new chat and the first message send the request body will look like 
-    {
-        message:""
-    }
-    In this senarion it will create an new session in chatSession with the details as 
-    {
-        id, user_id, chat_session_name, summary, recent_messages, created_at, updated_at
-    }
-    chat_session_name will be the short name for the username and will get that from LLM (create an skeleton function for this)
-    at start summary will be just an empty object
-    Recent message will be an array where max length is 10 and it will contain user, llm message
-
-
-2) when sending message on the excisting  chat the request body will look like
-    {
-        message: "",
-        chatSessionId: "" (uuid)
-    }
-    In this senario it will query the exsisting session and update the recentMessage and 
-    the summary if the recent messages length become more that length 10
-    
+       User
+        │
+    API Gateway                    → FastAPI (routes + CORS + JWT) — lightweight gateway
+        │   
+    Conversation Manager           → ChatService
+        │
+┌─────────┼──────────┐
+Session   Memory     User      → ChatRepository / SummaryAgent+window / Auth user only
+Store     Manager    Profile
+  │
+Prompt Builder                 → Inline in each agent (no shared builder service yet)
+  │
+Tool Decision Layer            → DecisionAgent + ToolRegistry
+  │
+┌──────┴──────┐
+LLM Only   Tool Calling        → ResponseAgent alone  vs  SearchTool → then ResponseAgent
+  │
+Response Validator             → ❌ Not implemented yet
+  │
+MongoDB                        → users + chatSession collections
