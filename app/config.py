@@ -32,5 +32,17 @@ class Settings(BaseSettings):
     SUMMARY_MODEL: str = "llama-3.3-70b-versatile"
     RESPONSE_MODEL: str = "llama-3.3-70b-versatile"
 
+    # RAG / embeddings (nomic-embed-text-v1.5 via fastembed — Groq does not
+    # currently expose this model on all accounts)
+    EMBEDDING_MODEL: str = "nomic-ai/nomic-embed-text-v1.5"
+    EMBEDDING_DIMENSION: int = 768
+    RAG_TOP_K: int = 5
+
+    # Pinecone
+    PINECONE_API_KEY: str = ""
+    PINECONE_INDEX_NAME: str = "cortex-rag"
+    PINECONE_CLOUD: str = "aws"
+    PINECONE_REGION: str = "us-east-1"
+
 
 settings = Settings()

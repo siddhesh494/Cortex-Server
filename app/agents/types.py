@@ -9,6 +9,7 @@ class AgentInput:
     message: str = ""
     previous_messages: list | None = None
     chat_summary: dict | None = None
+    rag_summary: dict | None = None
     tool_context: str | None = None
     recent_messages: list | None = None
     existing_summary: dict | None = None

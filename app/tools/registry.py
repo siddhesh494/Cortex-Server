@@ -1,4 +1,5 @@
 from app.tools.base import BaseTool
+from app.tools.rag_retrieval_tool import RAGRetrievalTool
 from app.tools.search_tool import SearchTool
 
 
@@ -20,7 +21,7 @@ class ToolRegistry:
     def _default_tools() -> list[BaseTool]:
         return [
             SearchTool(),
-            # Future: WeatherTool(), CalculatorTool(), etc.
+            RAGRetrievalTool(),
         ]
 
     def register(self, tool: BaseTool) -> None:

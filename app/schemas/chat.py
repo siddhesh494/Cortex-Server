@@ -16,11 +16,18 @@ class ChatResponse(BaseModel):
 
 class ChatRequestSchema(BaseModel):
     message: str = Field(
-        ...,
-        min_length=1,
-        max_length=5000
+        default="",
+        max_length=5000,
     )
     chatSessionId: str | None = None
+
+
+class UploadedDocument:
+    """In-memory uploaded file for the indexing pipeline."""
+
+    def __init__(self, filename: str, content: bytes) -> None:
+        self.filename = filename
+        self.content = content
 
 
 class ChatMessageResponse(BaseModel):
@@ -33,6 +40,7 @@ class ChatDetailResponse(BaseModel):
     id: str
     title: str
     messages: list[ChatMessageResponse]
+    has_document: bool = False
 
     @classmethod
     def from_mongo(cls, session: dict) -> "ChatDetailResponse":
@@ -47,6 +55,7 @@ class ChatDetailResponse(BaseModel):
                 )
                 for message in session.get("recent_messages", [])
             ],
+            has_document=bool(session.get("rag_summary")),
         )
 
 
