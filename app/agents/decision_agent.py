@@ -81,11 +81,26 @@ class DecisionAgent(Agent):
 
     def _build_user_payload(self, agent_input: AgentInput) -> str:
         parts: list[str] = []
+        document_uploaded = bool(agent_input.rag_summary)
+
+        parts.append(
+            "document_uploaded: "
+            + ("true" if document_uploaded else "false")
+        )
 
         if agent_input.chat_summary:
             summary = str(agent_input.chat_summary.get("summary", "")).strip()
             if summary:
                 parts.append(f"Conversation summary:\n{summary}")
+
+        if agent_input.rag_summary:
+            parts.append(
+                "A document is uploaded in this session. Use RAGSummary below "
+                "to decide if rag_retrieval is needed. Ignore any recent "
+                "assistant messages claiming no file was uploaded.\n\n"
+                "RAGSummary:\n"
+                + json.dumps(agent_input.rag_summary, default=str, indent=2)
+            )
 
         if agent_input.previous_messages:
             recent = agent_input.previous_messages[-4:]

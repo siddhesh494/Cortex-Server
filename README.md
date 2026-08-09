@@ -10,7 +10,7 @@ Cortex is a multi-agent AI assistant. Instead of one big model doing everything,
 
 - Python **3.12**
 - A running **MongoDB** database (local or Atlas)
-- API keys for **Groq** (LLMs) and **Tavily** (web search)
+- API keys for **Groq** (LLMs), **Tavily** (web search), and **Pinecone** (RAG vectors)
 
 ### 2. Create and activate a virtual environment
 
@@ -56,7 +56,18 @@ TITLE_MODEL=llama-3.1-8b-instant
 DECISION_MODEL=llama-3.1-8b-instant
 SUMMARY_MODEL=llama-3.3-70b-versatile
 RESPONSE_MODEL=llama-3.3-70b-versatile
+
+# RAG
+PINECONE_API_KEY=your_pinecone_api_key
+PINECONE_INDEX_NAME=cortex-rag
+PINECONE_CLOUD=aws
+PINECONE_REGION=us-east-1
+EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
+EMBEDDING_DIMENSION=768
+RAG_TOP_K=5
 ```
+
+On first RAG upload, the server creates the Pinecone index if it does not exist (`dimension=768`, cosine). Embeddings use **nomic-embed-text-v1.5** via **fastembed** (local ONNX). Groq is used for chat models; embedding models are not available on all Groq accounts.
 
 ### 5. Run the server
 
@@ -66,15 +77,11 @@ uvicorn app.main:app --reload
 
 The API will be available at `http://127.0.0.1:8000`.
 
-You can check it’s running by opening `/` — you should see a success message.
-
 Interactive API docs: `http://127.0.0.1:8000/docs`
 
 ---
 
 ## Architecture
-
-Think of Cortex like a smart receptionist who remembers past chats, decides when to look things up online, and then writes a clear reply.
 
 ```
 User
@@ -85,66 +92,80 @@ Protected API Gateway          → Login required (JWT). FastAPI entry point.
   ▼
 Conversation Manager           → Creates or continues a chat session
   │
+  ├── Optional file upload     → Index PDF/TXT into Pinecone + save RAGSummary
   ├── New chat?                → Save session in MongoDB + generate a short title
-  └── Existing chat?           → Load past messages, summary, key points, and preferences
+  └── Existing chat?           → Load past messages, summary, preferences, RAGSummary
   │
   ▼
-Decision Agent                 → “Do we need the internet for this?”
+Decision Agent                 → search | rag_retrieval | no tool
   │
-  ├── Yes → Tavily Search      → Fetch fresh info from the web
-  └── No  → Skip search
+  ├── rag_retrieval            → Similarity search over the session document
+  ├── search (Tavily)          → Fetch fresh info from the web
+  └── No tool
   │
   ▼
 Response Agent                 → Write the final answer using everything above
   │
   ▼
 Memory                         → Save the exchange in MongoDB
-                                 After ~12 messages, summarize older ones so context stays short
+                                 After ~12 messages, summarize older ones
 ```
 
-### Step by step (simple version)
+### RAG (document Q&A)
 
-**1. Protected API Gateway**  
-Every chat request goes through an authenticated API. Only logged-in users can talk to Cortex.
+**Indexing** (when a file is attached to `/protected/chat/stream`):
 
-**2. Conversation management**  
-- **New conversation:** create a MongoDB session and ask a small model to invent a short chat title.  
-- **Existing conversation:** load recent messages, a running summary, key points, and how the user likes answers formatted.
+1. Extract text (PDF / TXT)
+2. Semantic chunking (LangChain `SemanticChunker`)
+3. Embed chunks with nomic-embed-text-v1.5
+4. Upsert into Pinecone (filtered by `sessionId` + `userId`)
+5. Generate `rag_summary` and store it on the Mongo chat session
 
-**3. Decision agent**  
-A lightweight model decides if an external tool is needed. Today that tool is **Tavily Search** — used when the user asks for something that needs up-to-date info (news, current events, etc.).
+**Retrieval** (later messages):
 
-**4. Response generation**  
-The response agent builds the final answer from:
-- the user’s question  
-- chat history + summary + key points  
-- response preferences  
-- search results (if any)
+1. Decision agent inspects `rag_summary` vs the user question
+2. If relevant → `rag_retrieval` tool embeds the query and searches Pinecone
+3. Response agent answers using retrieved chunks
 
-**5. Memory management**  
-Each turn is stored in MongoDB. When a conversation grows past about **12 messages**, an LLM writes a short summary of older messages. That keeps later replies smart without sending the entire chat every time — and it can remember things like preferred tone or format.
+**Rules**
 
-### Why multiple agents?
+- One document per chat session
+- Upload allowed on a new or existing chat
+- New-chat titles can use the document excerpt (+ optional user message)
+- Stream blocks silently until indexing finishes, then continues the normal chat flow
 
-One model can do everything, but it’s often slower, more expensive, or worse at specialized jobs. Cortex splits work:
+### `/protected/chat/stream` (multipart)
+
+Send `multipart/form-data` for **every** chat stream request (text-only and with file):
+
+| Field           | Type       | Required                |
+|-----------------|------------|-------------------------|
+| `message`       | string     | No if `file` is present |
+| `chatSessionId` | string     | No (omit = new chat)    |
+| `file`          | PDF or TXT | No                      |
+
+Do **not** send `application/json` to this endpoint. Do **not** manually set `Content-Type` when using `FormData` (the browser sets the boundary).
+
+If a second document is uploaded for a session that already has `rag_summary`, the API returns:
+
+```json
+{
+  "success": false,
+  "message": "A document has already been uploaded for this chat session. Only one document is allowed per session.",
+  "data": {
+    "error": "A document has already been uploaded for this chat session. Only one document is allowed per session."
+  }
+}
+```
+
+### Agents
 
 | Agent           | Role                                      | Model                      |
 |-----------------|-------------------------------------------|----------------------------|
 | Title Agent     | Names new chats                           | Llama 3.1 8B Instant       |
-| Decision Agent  | Chooses whether to search the web         | Llama 3.1 8B Instant       |
+| Decision Agent  | Chooses search / RAG / no tool            | Llama 3.1 8B Instant       |
 | Summary Agent   | Compresses long conversations             | Llama 3.3 70B Versatile    |
 | Response Agent  | Writes the final user-facing answer       | Llama 3.3 70B Versatile    |
-
-Smaller / faster models handle quick decisions and titles. A stronger model handles summarizing and answering, where quality matters more.
-
-### What this stack teaches
-
-Building an AI app is more than writing a good prompt. You also need:
-
-- **Memory** — what to store and when to compress it  
-- **Context** — what to send the model so answers stay relevant  
-- **Orchestration** — which agent runs when  
-- **Model choice** — matching size/cost to each job  
 
 ---
 
@@ -156,7 +177,8 @@ app/
   routes/        # Auth + protected chat endpoints
   services/      # Conversation orchestration (ChatService)
   repositories/  # MongoDB access
-  tools/         # External tools (e.g. Tavily search)
+  tools/         # search + rag_retrieval
+  rag/           # Extract → chunk → embed → Pinecone → summary
   memory/        # Chat memory helpers
   models/        # Data shapes for DB
   schemas/       # Request/response validation
