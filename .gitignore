@@ -114,3 +114,6 @@ docker-compose.override.yml
 # Temporary files
 *.tmp
 *.temp
+
+me.md
+notebook.md

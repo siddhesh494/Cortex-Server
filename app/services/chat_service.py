@@ -7,13 +7,18 @@ from app.agents.response_agent import ResponseAgent
 from app.agents.summary_agent import SummaryAgent
 from app.agents.title_agent import TitleAgent
 from app.agents.types import AgentInput
-from app.core.exceptions import ChatNotFoundException
+from app.core.exceptions import (
+    ChatNotFoundException,
+    DocumentAlreadyUploadedException,
+)
 from app.core.logger import logger
+from app.rag.indexing_service import RagIndexingService
 from app.repositories.chat_repository import ChatRepository
 from app.schemas.chat import (
     ChatDetailResponse,
     ChatHistoryItemResponse,
     ChatRequestSchema,
+    UploadedDocument,
 )
 from app.tools.base import ToolResult
 from app.tools.registry import ToolRegistry, default_tool_registry
@@ -24,7 +29,7 @@ class ChatService:
     Conversation Manager.
 
     Orchestrates agents; does not own prompts or model configuration.
-    Flow: Title → Decision → Tool(s) → Response → Summary
+    Flow: Title → (optional RAG index) → Decision → Tool(s) → Response → Summary
     """
 
     SUMMARY_WINDOW_SIZE = 10
@@ -37,6 +42,7 @@ class ChatService:
         self.decision_agent = DecisionAgent(registry=self.tool_registry)
         self.response_agent = ResponseAgent()
         self.summary_agent = SummaryAgent()
+        self.rag_indexing = RagIndexingService()
 
     async def chat(
         self,
@@ -52,14 +58,34 @@ class ChatService:
         self,
         user_id: str,
         body: ChatRequestSchema,
+        document: UploadedDocument | None = None,
     ) -> AsyncGenerator[dict, None]:
         if body.chatSessionId:
-            async for event in self._continue_chat_stream(user_id, body):
+            async for event in self._continue_chat_stream(user_id, body, document):
                 yield event
             return
 
-        async for event in self._create_new_chat_stream(user_id, body):
+        async for event in self._create_new_chat_stream(user_id, body, document):
             yield event
+
+    async def assert_document_allowed(
+        self,
+        user_id: str,
+        chat_session_id: str | None,
+    ) -> None:
+        """Raise if the session already has an indexed document."""
+        if not chat_session_id:
+            return
+
+        session = await self.chat_repository.find_by_id_and_user(
+            chat_session_id,
+            user_id,
+        )
+        if session is None:
+            raise ChatNotFoundException()
+
+        if session.get("rag_summary"):
+            raise DocumentAlreadyUploadedException()
 
     async def get_chat_history(
         self,
@@ -92,18 +118,22 @@ class ChatService:
         user_id: str,
         body: ChatRequestSchema,
     ):
+        message = self._normalize_message(body.message)
         title = (
-            await self.title_agent.execute(AgentInput(message=body.message))
+            await self.title_agent.execute(AgentInput(message=message))
         ).content
 
         decision = (
-            await self.decision_agent.execute(AgentInput(message=body.message))
+            await self.decision_agent.execute(AgentInput(message=message))
         ).content
-        tool_context = await self._resolve_tool_context(decision)
-        print(f"tool_context: {tool_context}")
+        tool_context = await self._resolve_tool_context(
+            decision,
+            user_id=user_id,
+            session_id=None,
+        )
         ai_response = (
             await self.response_agent.execute(
-                AgentInput(message=body.message, tool_context=tool_context)
+                AgentInput(message=message, tool_context=tool_context)
             )
         ).content
 
@@ -116,7 +146,7 @@ class ChatService:
             "recent_messages": [
                 {
                     "role": "user",
-                    "message": body.message,
+                    "message": message,
                     "created_at": now,
                 },
                 {
@@ -149,11 +179,11 @@ class ChatService:
         if session is None:
             raise ChatNotFoundException()
 
+        message = self._normalize_message(body.message)
         messages = session["recent_messages"]
         chat_summary = session.get("chat_summary") or {}
+        rag_summary = session.get("rag_summary")
         summarized_count = int(chat_summary.get("summarized_message_count") or 0)
-
-        # Only send messages not already covered by the summary to the LLM.
         previous_messages = list(messages[summarized_count:])
 
         now = datetime.now(timezone.utc)
@@ -161,7 +191,7 @@ class ChatService:
         messages.append(
             {
                 "role": "user",
-                "message": body.message,
+                "message": message,
                 "created_at": now,
             }
         )
@@ -169,18 +199,22 @@ class ChatService:
         decision = (
             await self.decision_agent.execute(
                 AgentInput(
-                    message=body.message,
+                    message=message,
                     previous_messages=previous_messages,
                     chat_summary=chat_summary,
+                    rag_summary=rag_summary,
                 )
             )
         ).content
-        tool_context = await self._resolve_tool_context(decision)
-        print(f"tool_context: {tool_context}")
+        tool_context = await self._resolve_tool_context(
+            decision,
+            user_id=user_id,
+            session_id=body.chatSessionId,
+        )
         ai_response = (
             await self.response_agent.execute(
                 AgentInput(
-                    message=body.message,
+                    message=message,
                     previous_messages=previous_messages,
                     chat_summary=chat_summary,
                     tool_context=tool_context,
@@ -232,20 +266,22 @@ class ChatService:
         self,
         user_id: str,
         body: ChatRequestSchema,
+        document: UploadedDocument | None = None,
     ) -> AsyncGenerator[dict, None]:
-        title = (
-            await self.title_agent.execute(AgentInput(message=body.message))
-        ).content
+        message = self._normalize_message(
+            body.message,
+            filename=document.filename if document else None,
+        )
 
         now = datetime.now(timezone.utc)
-        document = {
+        session_doc = {
             "user_id": user_id,
-            "chat_session_name": title,
+            "chat_session_name": "New Chat",
             "chat_summary": {},
             "recent_messages": [
                 {
                     "role": "user",
-                    "message": body.message,
+                    "message": message,
                     "created_at": now,
                 }
             ],
@@ -253,7 +289,24 @@ class ChatService:
             "updated_at": now,
         }
 
-        session_id = await self.chat_repository.create_session(document)
+        session_id = await self.chat_repository.create_session(session_doc)
+
+        rag_summary = None
+        title_seed = message
+
+        if document is not None:
+            indexing = await self.rag_indexing.index_document(
+                file_bytes=document.content,
+                filename=document.filename,
+                session_id=session_id,
+                user_id=user_id,
+            )
+            rag_summary = indexing.rag_summary
+            title_seed = self._build_title_seed(message, indexing.excerpt)
+
+        title = (
+            await self.title_agent.execute(AgentInput(message=title_seed))
+        ).content
 
         yield {
             "type": "meta",
@@ -261,12 +314,17 @@ class ChatService:
         }
 
         decision = (
-            await self.decision_agent.execute(AgentInput(message=body.message))
+            await self.decision_agent.execute(
+                AgentInput(message=message, rag_summary=rag_summary)
+            )
         ).content
-        tool_context = await self._resolve_tool_context(decision)
-        print(f"tool_context: {tool_context}")
+        tool_context = await self._resolve_tool_context(
+            decision,
+            user_id=user_id,
+            session_id=session_id,
+        )
         response_input = AgentInput(
-            message=body.message,
+            message=message,
             tool_context=tool_context,
         )
 
@@ -279,24 +337,27 @@ class ChatService:
             }
 
         now = datetime.now(timezone.utc)
-        await self.chat_repository.update_session(
-            session_id,
-            {
-                "recent_messages": [
-                    {
-                        "role": "user",
-                        "message": body.message,
-                        "created_at": now,
-                    },
-                    {
-                        "role": "assistant",
-                        "message": ai_response,
-                        "created_at": now,
-                    },
-                ],
-                "updated_at": now,
-            },
-        )
+        update_fields: dict = {
+            "chat_session_name": title,
+            "recent_messages": [
+                {
+                    "role": "user",
+                    "message": message,
+                    "created_at": now,
+                },
+                {
+                    "role": "assistant",
+                    "message": ai_response,
+                    "created_at": now,
+                },
+            ],
+            "updated_at": now,
+        }
+        if rag_summary is not None:
+            update_fields["rag_summary"] = rag_summary
+            update_fields["rag_document_id"] = indexing.document_id
+
+        await self.chat_repository.update_session(session_id, update_fields)
 
         yield {
             "type": "done",
@@ -307,6 +368,7 @@ class ChatService:
         self,
         user_id: str,
         body: ChatRequestSchema,
+        document: UploadedDocument | None = None,
     ) -> AsyncGenerator[dict, None]:
         session = await self.chat_repository.find_by_id_and_user(
             body.chatSessionId,
@@ -316,16 +378,35 @@ class ChatService:
         if session is None:
             raise ChatNotFoundException()
 
+        if document is not None and session.get("rag_summary"):
+            raise DocumentAlreadyUploadedException()
+
+        message = self._normalize_message(
+            body.message,
+            filename=document.filename if document else None,
+        )
         messages = session["recent_messages"]
         chat_summary = session.get("chat_summary") or {}
+        rag_summary = session.get("rag_summary")
+        rag_document_id = None
         summarized_count = int(chat_summary.get("summarized_message_count") or 0)
         previous_messages = list(messages[summarized_count:])
+
+        if document is not None:
+            indexing = await self.rag_indexing.index_document(
+                file_bytes=document.content,
+                filename=document.filename,
+                session_id=body.chatSessionId,
+                user_id=user_id,
+            )
+            rag_summary = indexing.rag_summary
+            rag_document_id = indexing.document_id
 
         now = datetime.now(timezone.utc)
         messages.append(
             {
                 "role": "user",
-                "message": body.message,
+                "message": message,
                 "created_at": now,
             }
         )
@@ -338,16 +419,21 @@ class ChatService:
         decision = (
             await self.decision_agent.execute(
                 AgentInput(
-                    message=body.message,
+                    message=message,
                     previous_messages=previous_messages,
                     chat_summary=chat_summary,
+                    rag_summary=rag_summary,
                 )
             )
         ).content
-        tool_context = await self._resolve_tool_context(decision)
-        print(f"tool_context: {tool_context}")  
+        logger.info(f"[chat_service] | decision: {decision}")
+        tool_context = await self._resolve_tool_context(
+            decision,
+            user_id=user_id,
+            session_id=body.chatSessionId,
+        )
         response_input = AgentInput(
-            message=body.message,
+            message=message,
             previous_messages=previous_messages,
             chat_summary=chat_summary,
             tool_context=tool_context,
@@ -387,13 +473,18 @@ class ChatService:
                 summarized_count + self.SUMMARY_WINDOW_SIZE
             )
 
+        update_fields: dict = {
+            "recent_messages": messages,
+            "chat_summary": chat_summary,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        if rag_document_id is not None:
+            update_fields["rag_summary"] = rag_summary
+            update_fields["rag_document_id"] = rag_document_id
+
         await self.chat_repository.update_session(
             body.chatSessionId,
-            {
-                "recent_messages": messages,
-                "chat_summary": chat_summary,
-                "updated_at": datetime.now(timezone.utc),
-            },
+            update_fields,
         )
 
         yield {
@@ -401,7 +492,13 @@ class ChatService:
             "chatSessionId": body.chatSessionId,
         }
 
-    async def _resolve_tool_context(self, decision: ToolDecision) -> str | None:
+    async def _resolve_tool_context(
+        self,
+        decision: ToolDecision,
+        *,
+        user_id: str,
+        session_id: str | None,
+    ) -> str | None:
         """
         Execute the chosen tool (if any) and format its result for ResponseAgent.
         """
@@ -420,14 +517,19 @@ class ChatService:
             )
             return None
 
+        tool_args = dict(decision.tool_args or {})
+        if decision.tool_name == "rag_retrieval":
+            tool_args["session_id"] = session_id
+            tool_args["user_id"] = user_id
+
         logger.info(
             "[conversation_manager] executing tool | tool=%s | args=%s",
             decision.tool_name,
-            decision.tool_args,
+            {k: v for k, v in tool_args.items() if k != "user_id"},
         )
 
         try:
-            result = await tool.execute(**decision.tool_args)
+            result = await tool.execute(**tool_args)
         except Exception as exc:
             logger.error(
                 "[conversation_manager] tool execution failed | tool=%s | error=%s",
@@ -440,7 +542,7 @@ class ChatService:
                 data=None,
                 error=str(exc),
             )
-        
+
         return self._format_tool_context(decision, result)
 
     @staticmethod
@@ -453,6 +555,17 @@ class ChatService:
             "error": result.error,
             "data": result.data,
         }
+
+        if decision.tool_name == "rag_retrieval":
+            return (
+                "Retrieved document passages from the user's uploaded file. "
+                "Ground your answer in these passages when relevant.\n"
+                f"{json.dumps(payload, default=str, indent=2)}\n"
+                "If data.results is empty, say you could not find relevant "
+                "passages in the uploaded document and answer carefully "
+                "without inventing document contents."
+            )
+
         return (
             "Tool results are available. Use them when answering the user.\n"
             f"{json.dumps(payload, default=str, indent=2)}\n"
@@ -480,3 +593,21 @@ class ChatService:
             return None
 
         return messages[summarized_message_count:next_window_end]
+
+    @staticmethod
+    def _normalize_message(message: str, filename: str | None = None) -> str:
+        cleaned = (message or "").strip()
+        if cleaned:
+            return cleaned
+        if filename:
+            return f"I've uploaded a document named {filename}."
+        return "Hello"
+
+    @staticmethod
+    def _build_title_seed(message: str, document_excerpt: str) -> str:
+        parts = []
+        if message.strip():
+            parts.append(f"User message: {message.strip()}")
+        if document_excerpt.strip():
+            parts.append(f"Document excerpt:\n{document_excerpt.strip()[:1500]}")
+        return "\n\n".join(parts) if parts else "Uploaded Document"

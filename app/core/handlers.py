@@ -4,8 +4,12 @@ from app.core.response import ApiResponse
 
 from app.core.exceptions import (
     ChatNotFoundException,
+    DocumentAlreadyUploadedException,
+    EmptyDocumentException,
     InvalidCredentialsException,
+    RagIndexingException,
     UnauthorizedException,
+    UnsupportedFileTypeException,
     UserAlreadyExistsException,
 )
 
@@ -54,4 +58,48 @@ def register_exception_handlers(app: FastAPI):
         return ApiResponse.error(
             message=exc.message,
             status_code=404
+        )
+
+    @app.exception_handler(DocumentAlreadyUploadedException)
+    async def document_already_uploaded_handler(
+        request: Request,
+        exc: DocumentAlreadyUploadedException,
+    ):
+        return ApiResponse.error(
+            message=exc.message,
+            status_code=400,
+            data={"error": exc.message},
+        )
+
+    @app.exception_handler(UnsupportedFileTypeException)
+    async def unsupported_file_type_handler(
+        request: Request,
+        exc: UnsupportedFileTypeException,
+    ):
+        return ApiResponse.error(
+            message=exc.message,
+            status_code=400,
+            data={"error": exc.message},
+        )
+
+    @app.exception_handler(EmptyDocumentException)
+    async def empty_document_handler(
+        request: Request,
+        exc: EmptyDocumentException,
+    ):
+        return ApiResponse.error(
+            message=exc.message,
+            status_code=400,
+            data={"error": exc.message},
+        )
+
+    @app.exception_handler(RagIndexingException)
+    async def rag_indexing_handler(
+        request: Request,
+        exc: RagIndexingException,
+    ):
+        return ApiResponse.error(
+            message=exc.message,
+            status_code=500,
+            data={"error": exc.message},
         )
