@@ -7,6 +7,8 @@ the same open-source Nomic model locally for consistent vectors.
 
 from __future__ import annotations
 
+import logging
+import os
 from functools import lru_cache
 from typing import Iterable
 
@@ -19,13 +21,45 @@ DOCUMENT_PREFIX = "search_document: "
 QUERY_PREFIX = "search_query: "
 
 
+def _hf_token() -> str:
+    return (settings.HF_TOKEN or os.environ.get("HF_TOKEN") or "").strip()
+
+
+def _configure_embedding_runtime() -> None:
+    """Set HF + ONNX env before fastembed imports those libraries."""
+    token = _hf_token()
+    if token:
+        os.environ["HF_TOKEN"] = token
+    else:
+        # Public models still download without a token; hush Hub's noisy warning.
+        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    # onnxruntime probes Linux DRM sysfs for GPUs; on macOS/CPU that only
+    # prints a harmless warning. Keep ORT at ERROR unless already configured.
+    os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "3")
+
+
+_configure_embedding_runtime()
+
+
 @lru_cache(maxsize=1)
 def _get_fastembed_model():
+    _configure_embedding_runtime()
     from fastembed import TextEmbedding
 
     model_name = settings.EMBEDDING_MODEL
+    if not _hf_token():
+        logger.warning(
+            "[rag.embeddings] HF_TOKEN is not set. Add a read token from "
+            "https://huggingface.co/settings/tokens to .env for higher Hub rate limits."
+        )
     logger.info("[rag.embeddings] loading fastembed model | model=%s", model_name)
-    return TextEmbedding(model_name=model_name)
+    return TextEmbedding(
+        model_name=model_name,
+        providers=["CPUExecutionProvider"],
+        cuda=False,
+    )
 
 
 def _embed_raw(texts: list[str]) -> list[list[float]]:

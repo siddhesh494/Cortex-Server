@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 768
     RAG_TOP_K: int = 5
 
+    # Optional Hugging Face token for fastembed ONNX downloads (higher Hub rate limits)
+    HF_TOKEN: str = ""
+
     # Pinecone
     PINECONE_API_KEY: str = ""
     PINECONE_INDEX_NAME: str = "cortex-rag"

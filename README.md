@@ -65,9 +65,13 @@ PINECONE_REGION=us-east-1
 EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
 EMBEDDING_DIMENSION=768
 RAG_TOP_K=5
+
+# Optional: Hugging Face read token for faster/authenticated ONNX model downloads
+# Create one at https://huggingface.co/settings/tokens (read access is enough)
+HF_TOKEN=your_huggingface_token
 ```
 
-On first RAG upload, the server creates the Pinecone index if it does not exist (`dimension=768`, cosine). Embeddings use **nomic-embed-text-v1.5** via **fastembed** (local ONNX). Groq is used for chat models; embedding models are not available on all Groq accounts.
+On first RAG upload, the server creates the Pinecone index if it does not exist (`dimension=768`, cosine). Embeddings use **nomic-embed-text-v1.5** via **fastembed** (local ONNX). Groq is used for chat models; embedding models are not available on all Groq accounts. Set `HF_TOKEN` to avoid Hugging Face Hub rate-limit warnings when the ONNX model is downloaded.
 
 ### 5. Run the server
 
