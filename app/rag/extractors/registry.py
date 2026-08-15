@@ -29,3 +29,13 @@ def extract_document(data: bytes, filename: str) -> ExtractedDocument:
         raise UnsupportedFileTypeException(filename)
 
     return extractor.extract(data, filename)
+
+
+def extract_document_from_path(path: str, filename: str) -> ExtractedDocument:
+    extension = Path(filename or path or "").suffix.lower()
+    extractor = _BY_EXTENSION.get(extension)
+
+    if extractor is None:
+        raise UnsupportedFileTypeException(filename)
+
+    return extractor.extract_from_path(path, filename)

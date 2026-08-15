@@ -32,14 +32,17 @@ class Settings(BaseSettings):
     SUMMARY_MODEL: str = "llama-3.3-70b-versatile"
     RESPONSE_MODEL: str = "llama-3.3-70b-versatile"
 
-    # RAG / embeddings (nomic-embed-text-v1.5 via fastembed — Groq does not
-    # currently expose this model on all accounts)
-    EMBEDDING_MODEL: str = "nomic-ai/nomic-embed-text-v1.5"
+    # RAG / embeddings (gemini-embedding-2 via Google Generative Language API)
+    EMBEDDING_MODEL: str = "gemini-embedding-2"
     EMBEDDING_DIMENSION: int = 768
     RAG_TOP_K: int = 5
 
-    # Optional Hugging Face token for fastembed ONNX downloads (higher Hub rate limits)
-    HF_TOKEN: str = ""
+    # Required for document/query embeddings
+    GEMINI_API_KEY: str = ""
+
+    # Bounded ingestion (Render Free ~512 MB)
+    EMBEDDING_BATCH_SIZE: int = 8
+    EMBEDDING_CONCURRENCY: int = 1
 
     # Pinecone
     PINECONE_API_KEY: str = ""

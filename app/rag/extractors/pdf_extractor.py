@@ -9,7 +9,14 @@ class PdfExtractor(BaseDocumentExtractor):
     extensions = frozenset({".pdf"})
 
     def extract(self, data: bytes, filename: str) -> ExtractedDocument:
-        reader = PdfReader(BytesIO(data))
+        return self._extract_reader(PdfReader(BytesIO(data)), filename)
+
+    def extract_from_path(self, path: str, filename: str) -> ExtractedDocument:
+        # Parse from disk so the upload byte buffer can be released earlier.
+        return self._extract_reader(PdfReader(path), filename)
+
+    @staticmethod
+    def _extract_reader(reader: PdfReader, filename: str) -> ExtractedDocument:
         pages: list[str] = []
 
         for page in reader.pages:
