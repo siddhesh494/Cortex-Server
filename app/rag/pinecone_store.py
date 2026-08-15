@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
 from pinecone import Pinecone, ServerlessSpec
 
@@ -14,6 +13,8 @@ from app.core.logger import logger
 
 # Pinecone metadata value size is limited; keep original text bounded.
 _MAX_ORIGINAL_TEXT_CHARS = 35000
+_UPSERT_MAX_ATTEMPTS = 3
+_UPSERT_RETRY_BASE_DELAY_SEC = 0.75
 
 
 class PineconeVectorStore:
@@ -63,6 +64,23 @@ class PineconeVectorStore:
                 break
             time.sleep(1)
 
+    def clear_session_namespace(self, session_id: str) -> None:
+        """Remove prior vectors for this session (safe re-index / retry)."""
+        namespace = self._namespace(session_id)
+        try:
+            self._index.delete(delete_all=True, namespace=namespace)
+            logger.info(
+                "[rag.pinecone] cleared namespace before ingest | namespace=%s",
+                namespace,
+            )
+        except Exception as exc:
+            # Empty namespace delete can error on some Pinecone plans/states.
+            logger.warning(
+                "[rag.pinecone] namespace clear skipped | namespace=%s | error=%s",
+                namespace,
+                exc,
+            )
+
     def upsert_chunks(
         self,
         *,
@@ -72,47 +90,76 @@ class PineconeVectorStore:
         user_id: str,
         document_id: str,
         source_file_name: str,
+        start_index: int = 0,
+        created_at: str | None = None,
     ) -> int:
+        """Upsert one bounded batch. Does not retain vectors after return."""
         if len(embeddings) != len(texts):
             raise ValueError("embeddings and texts length mismatch")
+        if not texts:
+            return 0
 
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = created_at or datetime.now(timezone.utc).isoformat()
+        namespace = self._namespace(session_id)
         vectors: list[dict[str, Any]] = []
 
-        for index, (embedding, text) in enumerate(zip(embeddings, texts)):
+        for offset, (embedding, text) in enumerate(zip(embeddings, texts)):
+            chunk_index = start_index + offset
             vectors.append(
                 {
-                    "id": f"{document_id}-{index}",
+                    "id": f"{document_id}-{chunk_index}",
                     "values": embedding,
                     "metadata": {
                         "sessionId": session_id,
                         "userId": user_id,
                         "documentId": document_id,
-                        "chunkIndex": index,
+                        "chunkIndex": chunk_index,
                         "sourceFileName": source_file_name,
+                        # Chunk text only — not the full document.
                         "originalText": text[:_MAX_ORIGINAL_TEXT_CHARS],
                         "createdAt": created_at,
                     },
                 }
             )
 
-        # Upsert in batches to stay under request size limits.
-        batch_size = 100
-        upserted = 0
-        namespace = self._namespace(session_id)
-
-        for start in range(0, len(vectors), batch_size):
-            batch = vectors[start : start + batch_size]
-            self._index.upsert(vectors=batch, namespace=namespace)
-            upserted += len(batch)
+        self._upsert_with_retry(vectors=vectors, namespace=namespace)
+        upserted = len(vectors)
+        # Drop local references before returning so GC can reclaim promptly.
+        del vectors
 
         logger.info(
-            "[rag.pinecone] upserted vectors | count=%s | session=%s | namespace=%s",
+            "[rag.pinecone] upserted batch | count=%s | start_index=%s | session=%s",
             upserted,
+            start_index,
             session_id,
-            namespace,
         )
         return upserted
+
+    def _upsert_with_retry(
+        self,
+        *,
+        vectors: list[dict[str, Any]],
+        namespace: str,
+    ) -> None:
+        last_error: Exception | None = None
+        for attempt in range(1, _UPSERT_MAX_ATTEMPTS + 1):
+            try:
+                self._index.upsert(vectors=vectors, namespace=namespace)
+                return
+            except Exception as exc:
+                last_error = exc
+                if attempt >= _UPSERT_MAX_ATTEMPTS:
+                    break
+                delay = _UPSERT_RETRY_BASE_DELAY_SEC * attempt
+                logger.warning(
+                    "[rag.pinecone] upsert failed (attempt %s/%s); retrying in %.1fs | error=%s",
+                    attempt,
+                    _UPSERT_MAX_ATTEMPTS,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+        raise RuntimeError(f"Pinecone upsert failed: {last_error}") from last_error
 
     def query(
         self,
