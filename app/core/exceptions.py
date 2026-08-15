@@ -55,3 +55,12 @@ class RagIndexingException(Exception):
 
     def __init__(self, detail: str = "Failed to index the uploaded document."):
         self.message = detail
+
+
+class PortfolioSessionNotFoundException(Exception):
+
+    def __init__(self):
+        self.message = (
+            "Portfolio chat session not found or expired. "
+            "Start a new conversation (sessions last 30 minutes)."
+        )

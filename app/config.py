@@ -50,5 +50,20 @@ class Settings(BaseSettings):
     PINECONE_CLOUD: str = "aws"
     PINECONE_REGION: str = "us-east-1"
 
+    # Public portfolio Q&A (unauthenticated)
+    PORTFOLIO_MODEL: str = "llama-3.1-8b-instant"
+    # Extra CORS origins for the portfolio site (comma-separated).
+    PORTFOLIO_CORS_ORIGINS: str = "http://localhost:5174"
+
+    @property
+    def portfolio_cors_origins(self) -> list[str]:
+        if not self.PORTFOLIO_CORS_ORIGINS.strip():
+            return []
+        return [
+            origin.strip()
+            for origin in self.PORTFOLIO_CORS_ORIGINS.split(",")
+            if origin.strip()
+        ]
+
 
 settings = Settings()
