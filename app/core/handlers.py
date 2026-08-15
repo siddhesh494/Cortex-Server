@@ -7,6 +7,7 @@ from app.core.exceptions import (
     DocumentAlreadyUploadedException,
     EmptyDocumentException,
     InvalidCredentialsException,
+    PortfolioSessionNotFoundException,
     RagIndexingException,
     UnauthorizedException,
     UnsupportedFileTypeException,
@@ -101,5 +102,16 @@ def register_exception_handlers(app: FastAPI):
         return ApiResponse.error(
             message=exc.message,
             status_code=500,
+            data={"error": exc.message},
+        )
+
+    @app.exception_handler(PortfolioSessionNotFoundException)
+    async def portfolio_session_not_found_handler(
+        request: Request,
+        exc: PortfolioSessionNotFoundException,
+    ):
+        return ApiResponse.error(
+            message=exc.message,
+            status_code=404,
             data={"error": exc.message},
         )
