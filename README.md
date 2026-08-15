@@ -62,16 +62,15 @@ PINECONE_API_KEY=your_pinecone_api_key
 PINECONE_INDEX_NAME=cortex-rag
 PINECONE_CLOUD=aws
 PINECONE_REGION=us-east-1
-EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v1.5
+EMBEDDING_MODEL=gemini-embedding-2
 EMBEDDING_DIMENSION=768
 RAG_TOP_K=5
-
-# Optional: Hugging Face read token for faster/authenticated ONNX model downloads
-# Create one at https://huggingface.co/settings/tokens (read access is enough)
-HF_TOKEN=your_huggingface_token
+EMBEDDING_BATCH_SIZE=8
+EMBEDDING_CONCURRENCY=1
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
-On first RAG upload, the server creates the Pinecone index if it does not exist (`dimension=768`, cosine). Embeddings use **nomic-embed-text-v1.5** via **fastembed** (local ONNX). Groq is used for chat models; embedding models are not available on all Groq accounts. Set `HF_TOKEN` to avoid Hugging Face Hub rate-limit warnings when the ONNX model is downloaded.
+On first RAG upload, the server creates the Pinecone index if it does not exist (`dimension=768`, cosine). Embeddings use **gemini-embedding-2** via the **Google Gemini API** (external — no local ONNX). Ingestion embeds and upserts in small batches (`EMBEDDING_BATCH_SIZE`, default 8) with a single in-flight ingestion job.
 
 ### 5. Run the server
 
@@ -121,8 +120,8 @@ Memory                         → Save the exchange in MongoDB
 
 1. Extract text (PDF / TXT)
 2. Semantic chunking (LangChain `SemanticChunker`)
-3. Embed chunks with nomic-embed-text-v1.5
-4. Upsert into Pinecone (filtered by `sessionId` + `userId`)
+3. Embed each batch with gemini-embedding-2 via Gemini
+4. Upsert that batch into Pinecone, then release it (filtered by `sessionId` + `userId`)
 5. Generate `rag_summary` and store it on the Mongo chat session
 
 **Retrieval** (later messages):

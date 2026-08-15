@@ -295,12 +295,15 @@ class ChatService:
         title_seed = message
 
         if document is not None:
+            file_bytes = document.content
+            document.content = b""
             indexing = await self.rag_indexing.index_document(
-                file_bytes=document.content,
+                file_bytes=file_bytes,
                 filename=document.filename,
                 session_id=session_id,
                 user_id=user_id,
             )
+            del file_bytes
             rag_summary = indexing.rag_summary
             title_seed = self._build_title_seed(message, indexing.excerpt)
 
@@ -393,12 +396,15 @@ class ChatService:
         previous_messages = list(messages[summarized_count:])
 
         if document is not None:
+            file_bytes = document.content
+            document.content = b""
             indexing = await self.rag_indexing.index_document(
-                file_bytes=document.content,
+                file_bytes=file_bytes,
                 filename=document.filename,
                 session_id=body.chatSessionId,
                 user_id=user_id,
             )
+            del file_bytes
             rag_summary = indexing.rag_summary
             rag_document_id = indexing.document_id
 
