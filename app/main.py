@@ -33,6 +33,7 @@ _cors_origins = [
     "http://127.0.0.1:5173",
     "https://cortex-client.onrender.com",
     "https://cortex-client.netlify.app",
+    "https://siddheshshinde.in",
     *settings.portfolio_cors_origins,
 ]
 
