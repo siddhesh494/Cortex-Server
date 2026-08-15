@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     # Public portfolio Q&A (unauthenticated)
     PORTFOLIO_MODEL: str = "llama-3.1-8b-instant"
     # Extra CORS origins for the portfolio site (comma-separated).
-    PORTFOLIO_CORS_ORIGINS: str = "http://localhost:5174"
+    PORTFOLIO_CORS_ORIGINS: str = "http://localhost:5174, https://siddheshshinde.in/"
 
     @property
     def portfolio_cors_origins(self) -> list[str]:
