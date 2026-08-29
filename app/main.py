@@ -31,6 +31,7 @@ register_exception_handlers(app)
 _cors_origins = [
     "http://localhost:5176",
     "http://127.0.0.1:5173",
+    "http://localhost:5173",
     "https://cortex-client.onrender.com",
     "https://cortex-client.netlify.app",
     "https://siddheshshinde.in",

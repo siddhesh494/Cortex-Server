@@ -52,8 +52,8 @@ LOG_LEVEL=INFO
 GROQ_API_KEY=your_groq_api_key
 TAVILY_API_KEY=your_tavily_api_key
 
-TITLE_MODEL=llama-3.1-8b-instant
-DECISION_MODEL=llama-3.1-8b-instant
+TITLE_MODEL=openai/gpt-oss-20b
+DECISION_MODEL=openai/gpt-oss-20b
 SUMMARY_MODEL=llama-3.3-70b-versatile
 RESPONSE_MODEL=llama-3.3-70b-versatile
 

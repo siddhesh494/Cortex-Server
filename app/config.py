@@ -24,11 +24,11 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str
 
     # Fallback / legacy single-model setting
-    MODEL_NAME: str = "llama-3.1-8b-instant"
+    MODEL_NAME: str = "openai/gpt-oss-20b"
 
     # Per-agent models (override via .env to A/B test without code changes)
-    TITLE_MODEL: str = "llama-3.1-8b-instant"
-    DECISION_MODEL: str = "llama-3.1-8b-instant"
+    TITLE_MODEL: str = "openai/gpt-oss-20b"
+    DECISION_MODEL: str = "openai/gpt-oss-20b"
     SUMMARY_MODEL: str = "llama-3.3-70b-versatile"
     RESPONSE_MODEL: str = "llama-3.3-70b-versatile"
 
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     PINECONE_REGION: str = "us-east-1"
 
     # Public portfolio Q&A (unauthenticated)
-    PORTFOLIO_MODEL: str = "llama-3.1-8b-instant"
+    PORTFOLIO_MODEL: str = "openai/gpt-oss-20b"
     # Extra CORS origins for the portfolio site (comma-separated).
     PORTFOLIO_CORS_ORIGINS: str = "http://localhost:5174"
 
